@@ -4,12 +4,14 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"net"
-	"os"
-	"time"
+	nws "network_service"
 	"util"
 )
+
+// smtp_msg通道
+var smtp_msg_chan chan bytes.Buffer
+var smtp_msg_write_chan chan bytes.Buffer
 
 func main() {
 	fmt.Println("Hello World!")
@@ -18,26 +20,28 @@ func main() {
 	util.CheckErrorOrExit(err)
 	defer conn.Close()
 
-	msg_feedback := bytes.NewBuffer(nil)
-	var buf [512]byte
+	// 开启独立的读协程
+	smtp_msg_chan = make(chan bytes.Buffer, 1)
+	smtp_msg_write_chan = make(chan bytes.Buffer, 1)
+
+	go nws.ReadRoutine(conn, &smtp_msg_chan)
+
+	// 独立的写协程
+	go nws.WriteToServerRoutine(conn, &smtp_msg_write_chan)
+
+	handle_smtp_msg_routine(&smtp_msg_chan)
+}
+
+// 处理 smtp 消息
+func handle_smtp_msg_routine(msg_chan *chan bytes.Buffer) {
+	// 主协程处理逻辑
 	for {
+		fmt.Println("waiting msg...")
+		msg_raw := <-smtp_msg_chan
+		msg := (*bytes.Buffer)(&msg_raw)
+		fmt.Println("got msg: ", msg)
 
-		conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
-		transferred, err := conn.Read(buf[0:])
+		// todo 解析msg的smtp协议
 
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-
-			// other error handlers
-			// ...
-			break
-		}
-
-		msg_feedback.Write(buf[0:transferred])
 	}
-
-	fmt.Println("message from server is: ")
-	msg_feedback.WriteTo(os.Stdout)
 }
